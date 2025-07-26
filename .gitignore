@@ -1,0 +1,13 @@
+# OS or editor artifacts
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Python Files
+__pycache__/
+*.py[cod]
+env/
+*.env
+
+sae-env/
+
