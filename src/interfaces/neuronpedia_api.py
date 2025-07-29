@@ -23,7 +23,7 @@ class NeuronpediaClient():
                 }
 
             headers = {
-                "Content-Type": "applications/json"
+                "Content-Type": "application/json"
             }
 
             try:
@@ -40,6 +40,7 @@ class NeuronpediaClient():
     def all_text_feat(self, query, ignore_bos, density_threshold, num_results):
 
             url = "https://www.neuronpedia.org/api/search-all"
+
 
             payload = {
                 "modelId": self.model_id,
@@ -69,5 +70,14 @@ class NeuronpediaClient():
                 if hasattr(e, 'response') and e.response is not None:
                     print(f"Response text: {e.response.text}")
                 return None
+
+    def extract_explanations(self, index):
+
+            url = f"https://www.neuronpedia.org/api/feature/{self.model_id}/{self.sae_layer}/{index}"
+
+            response = requests.get(url)
+            response.raise_for_status()
+            data = response.json()
+            return data['explanations'][0]['description']
 
 
