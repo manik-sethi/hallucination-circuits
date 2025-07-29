@@ -1,0 +1,42 @@
+
+hallucination_circuits/  
+├── configs/  
+│   ├── default.yaml         # global defaults  
+│   ├── models.yaml          # list of model + SAE presets  
+│   └── datasets.yaml        # list of dataset presets  
+│  
+├── data/                    # raw & processed data storage (or DVC)  
+│  
+├── src/                     # core library code  
+│   ├── __init__.py  
+│   ├── config.py            # load & merge Hydra/Ω configs  
+│   ├── data/  
+│   │   ├── base.py          # abstract DatasetLoader  
+│   │   ├── text.py          # plain‐text loader  
+│   │   └── jsonl.py         # JSONL QA loader  
+│   │  
+│   ├── models/  
+│   │   ├── base.py          # abstract ModelWrapper (tokenize→resid)  
+│   │   ├── transformer_lens.py # HookedTransformer wrapper  
+│   │   └── hf_integration.py   # HF “goodfire” client wrapper  
+│   │  
+│   ├── sae/  
+│   │   ├── loader.py        # SAE.from_pretrained helper & registry  
+│   │   └── utils.py         # encode/decode, batch helpers  
+│   │  
+│   ├── pipeline.py          # high‑level runner: for each (dataset, model, sae) → extract → analyze  
+│   ├── analysis/  
+│   │   ├── feature_stats.py # KD, SF, uncertainty metrics  
+│   │   └── similarity.py     # cosine & token‑based similarity  
+│   │  
+│   └── viz/  
+│       ├── plots.py         # matplotlib wrappers for activations, token heatmaps  
+│       └── dashboard.py     # e.g. Panel/Streamlit glue  
+│  
+├── scripts/  
+│   ├── extract_activations.py  # CLI: run pipeline → save .pt features  
+│   └── analyze.py              # CLI: load features → compute metrics → save .csv/.png  
+│  
+└── notebooks/  
+    ├── 01_quick_explore.ipynb  # uses src library for fast prototyping  
+    └── 02_model_comparison.ipynb  
