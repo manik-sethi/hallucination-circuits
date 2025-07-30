@@ -1,223 +1,210 @@
+#!/usr/bin/env python3
+import os
+import shutil
 import torch
+import torch.nn as nn
+import torch.optim as optim
 from torch.utils.data import DataLoader
-from transformers import AutoTokenizer, AutoModel
-from datasets import load_dataset
+from datasets import load_dataset, load_dataset_builder
+from dotenv import load_dotenv
 from tqdm import tqdm
-import torch.nn.functional as F
 import wandb
-import argparse
-from models.Frozen_LMMLP import FrozenLMMLP
-from sae_lens import SAE
 
-def calculate_top_k_accuracy(predictions, targets, k=50):
-    """Calculate top-k accuracy for SAE feature prediction"""
-    batch_size = predictions.size(0)
-    
-    # Get top-k predicted indices
-    _, pred_indices = torch.topk(predictions, k, dim=1)
-    
-    # Get top-k target indices  
-    _, target_indices = torch.topk(targets, k, dim=1)
-    
-    # Calculate intersection
-    correct = 0
-    for i in range(batch_size):
-        pred_set = set(pred_indices[i].cpu().numpy())
-        target_set = set(target_indices[i].cpu().numpy())
-        intersection = len(pred_set.intersection(target_set))
-        correct += intersection / k  # Normalized by k
-    
-    return correct / batch_size
+def get_hyperparams():
+    batch_size  = int(os.getenv("BATCH_SIZE", 2048))
+    num_workers = int(os.getenv("NUM_WORKERS", 4))
+    epochs      = int(os.getenv("EPOCHS", 10))
+    lr          = float(os.getenv("LEARNING_RATE", 1e-4))
+    hidden_dim  = int(os.getenv("HIDDEN_DIM", 128))
+    val_split   = float(os.getenv("VAL_SPLIT", 0.1))
+    return batch_size, num_workers, epochs, lr, hidden_dim, val_split
 
-def calculate_metrics(predictions, targets):
-    """Calculate various accuracy metrics"""
-    metrics = {}
-    
-    # Top-k accuracies
-    for k in [10, 50, 100, 200]:
-        metrics[f'top_{k}_accuracy'] = calculate_top_k_accuracy(predictions, targets, k)
-    
-    # Spearman correlation (measure of ranking similarity)
-    batch_size = predictions.size(0)
-    correlations = []
-    for i in range(batch_size):
-        pred_ranks = torch.argsort(torch.argsort(predictions[i], descending=True))
-        target_ranks = torch.argsort(torch.argsort(targets[i], descending=True))
-        
-        # Calculate Spearman correlation
-        pred_ranks_f = pred_ranks.float()
-        target_ranks_f = target_ranks.float()
-        
-        pred_mean = pred_ranks_f.mean()
-        target_mean = target_ranks_f.mean()
-        
-        numerator = ((pred_ranks_f - pred_mean) * (target_ranks_f - target_mean)).sum()
-        pred_std = ((pred_ranks_f - pred_mean) ** 2).sum().sqrt()
-        target_std = ((target_ranks_f - target_mean) ** 2).sum().sqrt()
-        
-        if pred_std > 0 and target_std > 0:
-            correlation = numerator / (pred_std * target_std)
-            correlations.append(correlation.item())
-    
-    if correlations:
-        metrics['spearman_correlation'] = sum(correlations) / len(correlations)
-    
-    # L2 distance between normalized vectors
-    pred_norm = F.normalize(predictions, p=2, dim=1)
-    target_norm = F.normalize(targets, p=2, dim=1)
-    metrics['cosine_similarity'] = F.cosine_similarity(pred_norm, target_norm).mean().item()
-    
-    return metrics
+class FrozenLMMLP(nn.Module):
+    def __init__(self, input_dim: int, hidden_dim: int, output_dim: int):
+        super().__init__()
+        self.fc1 = nn.Linear(input_dim, hidden_dim)
+        self.act = nn.ReLU()
+        self.fc2 = nn.Linear(hidden_dim, output_dim)
 
-# Fix wandb initialization - remove entity or use correct one
-wandb.init(project="hallucination_circuits")  # Removed entity parameter
+    def forward(self, x):
+        return self.fc2(self.act(self.fc1(x)))
 
-def get_dataloaders(tokenizer, sae, base_model, context_size, batch_size):
-    dataset = load_dataset("kilt_tasks", "eli5")
-    device = next(base_model.parameters()).device
 
-    def preprocess(example):
-        # Fix: ELI5 dataset has different structure - use the answer text
-        # The output field contains a list of answers, take the first one
-        if isinstance(example["output"], list) and len(example["output"]) > 0:
-            text = example["output"][0]["answer"]
-        else:
-            # Fallback to input if output format is unexpected
-            text = str(example.get("input", ""))
-        
-        # Ensure text is a string
-        if not isinstance(text, str):
-            text = str(text)
-        
-        inputs = tokenizer(
-            text,
-            padding="max_length",
-            truncation=True,
-            max_length=context_size,
-            return_tensors="pt"
-        )
-        
-        # Get hidden states from base model first, then pass to SAE
-        with torch.no_grad():
-            input_ids = inputs["input_ids"].to(device)
-            attention_mask = inputs["attention_mask"].to(device)
-            
-            # Get hidden states from the base model
-            outputs = base_model(input_ids=input_ids, attention_mask=attention_mask)
-            hidden_states = outputs.last_hidden_state  # Shape: [1, seq_len, hidden_size]
-            
-            # Use mean pooling to match the model's forward pass
-            pooled_hidden = hidden_states.mean(dim=1)  # Shape: [1, hidden_size]
-            
-            # Now pass the pooled hidden states to SAE
-            sae_out = sae.encode(pooled_hidden)  # Should work now
-            if len(sae_out.shape) > 1:
-                sae_out = sae_out.squeeze(0)  # Remove batch dimension
+def evaluate(model, loader, loss_fn, device):
+    model.eval()
+    total_loss = 0.0
+    hit_count  = 0
+    n_seen     = 0
+    with torch.no_grad():
+        for batch in tqdm(loader, desc="Eval"):
+            x = batch[input_key].to(device, non_blocking=True).float()
+            y = batch[label_key].to(device, non_blocking=True).float()
+            preds = model(x)
+            loss = loss_fn(preds, y)
+            total_loss += loss.item()
+            pred50 = preds.topk(50, dim=1).indices
+            true50 = y.topk(50, dim=1).indices
+            hits   = (pred50.unsqueeze(2) == true50.unsqueeze(1)).any(dim=(1,2))
+            hit_count += hits.sum().item()
+            n_seen    += hits.size(0)
+    avg_loss = total_loss / len(loader)
+    top50    = hit_count / n_seen
+    return avg_loss, top50
 
-        return {
-            "input_ids": inputs["input_ids"].squeeze(0),
-            "attention_mask": inputs["attention_mask"].squeeze(0),
-            "label": sae_out.detach().cpu()
+
+def main():
+    load_dotenv()
+    batch_size, num_workers, epochs, lr, hidden_dim, val_split = get_hyperparams()
+
+    wandb.init(
+        entity="manikx",
+        project="hallucination_circuits",
+        config={
+            "batch_size": batch_size,
+            "num_workers": num_workers,
+            "epochs": epochs,
+            "learning_rate": lr,
+            "hidden_dim": hidden_dim,
+            "val_split": val_split,
         }
-
-    # Take a smaller subset for testing
-    train_dataset = dataset["train"].select(range(100))  # Use first 1000 examples
-    tokenized_dataset = train_dataset.map(preprocess, remove_columns=train_dataset.column_names)
-    tokenized_dataset.set_format(type='torch')
-
-    return DataLoader(tokenized_dataset, batch_size=batch_size, shuffle=True)
-
-
-def train(args):
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-
-    tokenizer = AutoTokenizer.from_pretrained(args.base_model)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-
-    sae, _, _ = SAE.from_pretrained(
-        release=args.sae_release,
-        sae_id=args.sae_id,
-        device=device
     )
-    base_model = AutoModel.from_pretrained(args.base_model)
-    base_model.eval()
-    for param in base_model.parameters():
-        param.requires_grad = False
-    
-    # Move base_model to device before using it in preprocessing
-    base_model = base_model.to(device)
-    
-    # Debug SAE dimensions
-    print(f"SAE W_enc shape: {sae.W_enc.shape}")
-    print(f"SAE d_sae: {sae.cfg.d_sae}")
-    
-    # Use the correct SAE feature dimension
-    sae_feature_dim = sae.cfg.d_sae  # This should be 24576
-    
-    # Fixed: pass base_model object, not args.base_model string
-    model = FrozenLMMLP(base_model, hidden_dim=args.hidden_dim, output_dim=sae_feature_dim).to(device)
-    train_loader = get_dataloaders(tokenizer, sae, base_model, args.context_size, args.batch_size)
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
-    model.train()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+    if device.type == "cuda":
+        print(f"- CUDA devices: {torch.cuda.device_count()}")
+        print(f"- Current GPU name: {torch.cuda.get_device_name(0)}")
 
-    for epoch in range(args.epochs):
-        total_loss = 0
-        all_predictions = []
-        all_targets = []
-        
-        for batch in tqdm(train_loader, desc=f"Epoch {epoch+1}"):
-            input_ids = batch["input_ids"].to(device)
-            attention_mask = batch["attention_mask"].to(device)
-            labels = batch["label"].to(device)
+    data_dir = os.getenv("DATA_DIR") or "/workspace/eli5_sae_features_parquet"
+    if not os.path.isdir(data_dir):
+        raise ValueError(f"Data directory not found: {data_dir}")
 
-            logits = model(input_ids=input_ids, attention_mask=attention_mask)
-            loss = F.mse_loss(logits, labels)
+    dataset_id = os.getenv("HF_DATASET_ID", "mksethi/eli5_sae_features")
+    builder = load_dataset_builder(dataset_id)
+    features = builder.info.features
+
+    ds = load_dataset(
+        "parquet",
+        data_files=f"{data_dir}/*.parquet",
+        features=features,
+        split="train"
+    )
+
+    first_py  = ds[0]
+    global input_key, label_key
+    input_key = "input_ids" if "input_ids" in first_py else next(k for k,v in first_py.items() if isinstance(v, list))
+    label_key = "sae_features"
+
+    # Split dataset
+    ds_split = ds.train_test_split(test_size=val_split, seed=42)
+    train_ds = ds_split['train']
+    val_ds   = ds_split['test']
+
+    print(f"Dataset sizes - Train: {len(train_ds)}, Validation: {len(val_ds)}")
+
+    # Format as Tensors only
+    train_ds.set_format(type="torch", columns=[input_key, label_key])
+    val_ds.set_format(type="torch", columns=[input_key, label_key])
+
+    # DataLoaders
+    optimal_workers = min(num_workers, os.cpu_count() or 4)
+    print(f"Using {optimal_workers} data loader workers")
+
+    train_loader = DataLoader(
+        train_ds,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=optimal_workers,
+        pin_memory=True,
+        prefetch_factor=4,
+        persistent_workers=True,
+        drop_last=True
+    )
+    val_loader = DataLoader(
+        val_ds,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=0,
+        pin_memory=False,
+        drop_last=False
+    )
+
+    # Infer dimensions
+    first_batch = next(iter(train_loader))
+    input_dim  = first_batch[input_key].shape[1]
+    output_dim = first_batch[label_key].shape[1]
+    print(f"Detected input_dim={input_dim}, output_dim={output_dim}")
+
+    # Model, optimizer, loss
+    model    = FrozenLMMLP(input_dim, hidden_dim, output_dim).to(device)
+    optimizer = optim.AdamW(model.parameters(), lr=lr)
+    loss_fn   = nn.MSELoss()
+    # wandb.watch(model, log="all", log_freq=100)
+
+    # Checkpoint dir
+    ckpt_dir = os.getenv("CHECKPOINT_DIR", "./checkpoints")
+    os.makedirs(ckpt_dir, exist_ok=True)
+
+    # Training loop
+    epoch_losses=[]
+    for epoch in range(1, epochs + 1):
+        model.train()
+        total_loss = 0.0
+        hit_count  = 0
+        n_seen     = 0
+
+        for batch in tqdm(train_loader, desc=f"Epoch {epoch}/{epochs}"):
+            x = batch[input_key].to(device, non_blocking=True).float()
+            y = batch[label_key].to(device, non_blocking=True).float()
 
             optimizer.zero_grad()
+            preds = model(x)
+            loss  = loss_fn(preds, y)
             loss.backward()
             optimizer.step()
 
             total_loss += loss.item()
-            
-            # Store predictions and targets for metrics calculation
-            all_predictions.append(logits.detach())
-            all_targets.append(labels.detach())
+            pred50 = preds.topk(50, dim=1).indices
+            true50 = y.topk(50, dim=1).indices
+            hits   = (pred50.unsqueeze(2) == true50.unsqueeze(1)).any(dim=(1,2))
+            hit_count += hits.sum().item()
+            n_seen    += hits.size(0)
 
-        # Calculate metrics
-        all_predictions = torch.cat(all_predictions, dim=0)
-        all_targets = torch.cat(all_targets, dim=0)
-        
-        metrics = calculate_metrics(all_predictions, all_targets)
+        top50    = hit_count / n_seen
         avg_loss = total_loss / len(train_loader)
-        
-        # Log to wandb
-        log_dict = {"epoch": epoch + 1, "loss": avg_loss}
-        log_dict.update(metrics)
-        wandb.log(log_dict)
-        
-        # Print metrics
-        print(f"Epoch {epoch+1} | Loss: {avg_loss:.4f}")
-        print(f"Top-50 Accuracy: {metrics['top_50_accuracy']:.3f}")
-        print(f"Top-100 Accuracy: {metrics['top_100_accuracy']:.3f}")
-        print(f"Cosine Similarity: {metrics['cosine_similarity']:.3f}")
-        print(f"Spearman Correlation: {metrics.get('spearman_correlation', 0):.3f}")
-        print("-" * 50)
+        epoch_losses.append(avg_loss)
 
-    wandb.finish()
+        wandb.log({
+            "Train/Epoch": epoch,
+            "Train/Loss": avg_loss,
+            "Train/Top 50 Overlap": top50,
+        }, step=epoch)
 
+        print(f"Epoch {epoch} | Loss: {avg_loss:.4f} | Top‑50 overlap: {top50:.4f}")
+
+        ckpt_path = os.path.join(ckpt_dir, f"frozen_lm_mlp_epoch{epoch}.pt")
+        torch.save(model.state_dict(), ckpt_path)
+        wandb.save(ckpt_path)
+
+    # Final evaluation on validation set
+    print("Running final validation...")
+    val_loss, val_top50 = evaluate(model, val_loader, loss_fn, device)
+    print(f"Validation Loss: {val_loss:.4f} | Top‑50 overlap: {val_top50:.4f}")
+    wandb.log({
+        "Validation/loss": val_loss,
+        "Validation/Top 50 Overlap": val_top50
+    })
+
+    model_artifact = wandb.Artifact(
+        name="frozen-lm-mlp-model",
+        type="model",
+        description="FrozenLMMLP trained on SAE features",
+    )
+    model_artifact.add_file(ckpt_path)
+    wandb.log_artifact(model_artifact)
+    # Cleanup
+    if os.getenv("REMOVE_CHECKPOINTS_AFTER_RUN", "false").lower() == "true":
+        shutil.rmtree(ckpt_dir)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--base_model", type=str, default="gpt2")
-    parser.add_argument("--context_size", type=int, default=256)
-    parser.add_argument("--batch_size", type=int, default=4)
-    parser.add_argument("--lr", type=float, default=1e-4)
-    parser.add_argument("--hidden_dim", type=int, default=512)
-    parser.add_argument("--epochs", type=int, default=3)
-    parser.add_argument("--sae_release", type=str, default="gpt2-small-res-jb")
-    parser.add_argument("--sae_id", type=str, default="blocks.8.hook_resid_pre")
-    args = parser.parse_args()
-
-    train(args)
+    main()
