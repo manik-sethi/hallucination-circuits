@@ -13,3 +13,5 @@ sae-env/
 
 wandb/
 
+*.json
+*.safetensors
