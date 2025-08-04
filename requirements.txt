@@ -38,7 +38,6 @@ docstring_parser==0.17.0
 dol==0.3.19
 einops==0.8.1
 executing==2.0.1
-exo @ file:///Users/pardan/Code/exo
 fancy-einsum==0.0.3
 filelock==3.15.4
 Flask==3.1.0
