@@ -97,8 +97,6 @@ lxml==4.9.4
 Markdown==3.7
 markdown-it-py==3.0.0
 MarkupSafe==3.0.2
-matlab==0.1
-matlabengine==24.1.2
 matplotlib==3.10.0
 matplotlib-inline==0.1.7
 mdurl==0.1.2
