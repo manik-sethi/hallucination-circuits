@@ -194,7 +194,6 @@ tensorflow-io-gcs-filesystem==0.37.1
 termcolor==2.5.0
 threadpoolctl==3.6.0
 tiktoken==0.7.0
-tinygrad @ git+https://github.com/tinygrad/tinygrad.git@a9f5a764dc640a5e5cbaaeeee21df7c8ca37da38
 tokenizers==0.21.2
 torch==2.7.1
 tornado==6.4.1
