@@ -35,7 +35,7 @@ class TokenUnertaintyComputer:
         try:
             self.nlp = spacy.load("en_core_web_sm")
         except OSError:
-            print("Please install spacy English model: python -m spacy download en_core_web_sm")
+            print(" install spacy English model: python -m spacy download en_core_web_sm")
             raise
     
     def get_token_probabilities(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -43,13 +43,17 @@ class TokenUnertaintyComputer:
         Get token probabilities and logits from the model.
         
         Args:
+
             input_ids: Token IDs [batch_size, seq_len]
             attention_mask: Attention mask [batch_size, seq_len]
             
         Returns:
+
             probs: Token probabilities [batch_size, seq_len, vocab_size]
             logits: Raw logits [batch_size, seq_len, vocab_size]
         """
+
+
         self.model.eval()
         with torch.no_grad():
             # Get model outputs - this works for HookedTransformer
@@ -65,10 +69,14 @@ class TokenUnertaintyComputer:
         Compute basic uncertainty metrics for each token.
         
         This implements Equations 1 and 2 from the paper:
-        h_i = -log(p_i(t_i)) + H_i
-        H_i = -∑_v p_i(v) * log2(p_i(v))
+        h_i = -log(p_i(t_i)) + H_i 
+        --> the local and global uncertainity scores for token t_i
+
+        where:
+        H_i = -∑_v p_i(v) * log2(p_i(v)) ;; p_i(v) is the probability of token v at position i
         
         Args:
+
             input_ids: Token IDs [batch_size, seq_len] 
             attention_mask: Attention mask [batch_size, seq_len]
             
@@ -76,8 +84,10 @@ class TokenUnertaintyComputer:
             Dictionary containing:
             - 'neg_log_prob': Negative log probability of actual tokens
             - 'entropy': Entropy at each position
-            - 'hallucination_score': Combined uncertainty score (neg_log_prob + entropy)
+            - 'hallucination_score': Combined uncertainty score (neg_log_prob + entropy) --> not the final score
+            - 'token_probs': Probabilities of the actual tokens at each position 
         """
+
         probs, logits = self.get_token_probabilities(input_ids, attention_mask)
         batch_size, seq_len, vocab_size = probs.shape
         
@@ -87,7 +97,7 @@ class TokenUnertaintyComputer:
         actual_token_probs = torch.gather(probs, dim=-1, index=input_ids.unsqueeze(-1)).squeeze(-1)
         
         # Negative log probability of actual tokens
-        neg_log_prob = -torch.log(actual_token_probs + 1e-10)  # Add small epsilon for numerical stability
+        neg_log_prob = -torch.log(actual_token_probs + 1e-10)  # Added small epsilon for numerical stability
         
         # Entropy: H_i = -∑_v p_i(v) * log2(p_i(v))
         # We use natural log instead of log2 for consistency
@@ -103,6 +113,8 @@ class TokenUnertaintyComputer:
             'token_probs': actual_token_probs
         }
     
+
+
     def identify_keywords(self, text: str) -> List[Tuple[int, int, str]]:
         """
         Identify keywords (named entities and nouns) in the text using spaCy.
@@ -153,7 +165,7 @@ class TokenUnertaintyComputer:
         Map spaCy token positions to model token positions.
         
         This is tricky because spaCy tokenization != model tokenization.
-        We need to align them to know which model tokens correspond to keywords.
+        I aligned them to know which model tokens correspond to keywords.
         
         Args:
             text: Original text
