@@ -4,14 +4,15 @@ import math
 import time
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
+from transformers import AutoModel, AutoTokenizer
 from torch.cuda import amp
 from torch.utils.data import DataLoader
 from datasets import load_dataset
 from dotenv import load_dotenv
 from tqdm import tqdm
 import wandb
-from transformers import GPT2Model, GPT2TokenizerFast
 from safetensors.torch import save_file
 
 # -----------------------------
@@ -39,24 +40,31 @@ def first_present(cols, options):
 # Model
 # -----------------------------
 class Query2SAE(nn.Module):
-    def __init__(self, head_hidden_dim: int, sae_dim: int):
+    def __init__(self, head_hidden_dim: int, sae_dim: int, layer_index: int = 12,
+                 model_name: str = "google/gemma-2b-it"):
         super().__init__()
-        self.backbone = GPT2Model.from_pretrained("gpt2")
+        self.backbone = AutoModel.from_pretrained(model_name, output_hidden_states=True, torch_dtype = torch.bfloat16)
         for p in self.backbone.parameters():
-            p.requires_grad = False  # freeze GPT-2
+            p.requires_grad = False  # freeze backbone
+
+        hidden = self.backbone.config.hidden_size
         self.head = nn.Sequential(
-            nn.Linear(self.backbone.config.hidden_size, head_hidden_dim),
-            nn.ReLU(),
+            nn.LayerNorm(hidden),
+            nn.Linear(hidden, head_hidden_dim),
+            nn.GELU(),
             nn.Linear(head_hidden_dim, sae_dim),
-            nn.ReLU(), # Added a final ReLU to ensure non-negative, sparse outputs
+            nn.Softplus(beta=1.0)  # smooth nonnegativity
         )
+        self.layer_index = layer_index
 
     def forward(self, input_ids, attention_mask=None):
-        # no grad through backbone (we only train the head)
         with torch.no_grad():
-            out = self.backbone(input_ids=input_ids, attention_mask=attention_mask)
-            last_hidden = out.last_hidden_state[:, -1, :]  # [B, 768]
-        return self.head(last_hidden)
+            out = self.backbone(input_ids=input_ids, attention_mask=attention_mask, output_hidden_states=True)
+            H = out.hidden_states[self.layer_index]                # [B, T, H] from Gemma block 12
+            mask = attention_mask.unsqueeze(-1).float()            # [B, T, 1]
+            pooled = (H * mask).sum(dim=1) / (mask.sum(dim=1) + 1e-6)  # mean-pool -> [B, H]
+        return self.head(pooled)                                   # [B, sae_dim] ≥ 0
+
 
 # -----------------------------
 # Metrics
@@ -76,18 +84,15 @@ def cosine_sim(preds, targets):
     return (preds_n * targs_n).sum(dim=1).mean().item()
 
 @torch.no_grad()
-def evaluate(model, loader, loss_fn, device, k_list=(10, 50, 100)):
-    """Epoch-level evaluation: returns averages over the entire loader."""
+def evaluate(model, loader, device, l1_lambda=None, k_list=(10, 50, 100)):
     model.eval()
-    total_loss, total_mse_loss, total_l1_loss, n_batches = 0.0, 0.0, 0.0, 0
+    total_loss, total_cos_loss, total_sl1_loss, total_l1_loss, n_batches = 0.0, 0.0, 0.0, 0.0, 0
     cos_list = []
     precs = {k: 0.0 for k in k_list}
     recs  = {k: 0.0 for k in k_list}
     hits  = {k: 0.0 for k in k_list}
 
-    # Define the loss functions outside the loop for efficiency
-    mse_loss_fn = nn.MSELoss()
-    l1_lambda = get_hyperparams()[8]
+    smoothl1 = nn.SmoothL1Loss(beta=0.5)
 
     for batch in tqdm(loader, desc="Eval", leave=False):
         x_ids  = batch["input_ids"].to(device, non_blocking=True)
@@ -95,38 +100,37 @@ def evaluate(model, loader, loss_fn, device, k_list=(10, 50, 100)):
         y      = batch["sae_acts"].to(device, non_blocking=True).float()
 
         preds = model(x_ids, attention_mask=x_mask)
-        
-        loss_mse = mse_loss_fn(preds, y)
-        loss_l1 = torch.norm(preds, p=1, dim=1).mean()
-        loss = loss_mse + l1_lambda * loss_l1
-        
-        total_loss += loss.item()
-        total_mse_loss += loss_mse.item()
-        total_l1_loss += loss_l1.item()
+
+        cos_loss = 1.0 - F.cosine_similarity(preds + 1e-8, y + 1e-8, dim=1).mean()
+        sl1_loss = smoothl1(preds, y)
+        l1_loss  = preds.abs().mean()
+        loss = 0.3 * cos_loss + 0.7 * sl1_loss + (l1_lambda or 0.0) * l1_loss
+
+        total_loss     += loss.item()
+        total_cos_loss += cos_loss.item()
+        total_sl1_loss += sl1_loss.item()
+        total_l1_loss  += l1_loss.item()
         n_batches += 1
 
         cos_list.append(cosine_sim(preds, y))
         for k in k_list:
             p, r, h = topk_overlap(preds, y, k=k)
-            precs[k] += p
-            recs[k]  += r
-            hits[k]  += h
+            precs[k] += p; recs[k] += r; hits[k] += h
 
-    avg_loss = total_loss / max(n_batches, 1)
-    avg_mse_loss = total_mse_loss / max(n_batches, 1)
-    avg_l1_loss = total_l1_loss / max(n_batches, 1)
-    avg_cos  = sum(cos_list) / max(len(cos_list), 1)
+    avg = lambda x: x / max(n_batches, 1)
     metrics = {
-        "TotalLoss": avg_loss,
-        "MSELoss": avg_mse_loss,
-        "L1Loss": avg_l1_loss,
-        "Cosine": avg_cos,
+        "TotalLoss":   avg(total_loss),
+        "CosineLoss":  avg(total_cos_loss),
+        "SmoothL1Loss":avg(total_sl1_loss),
+        "L1Loss":      avg(total_l1_loss),
+        "Cosine":      sum(cos_list) / max(len(cos_list), 1),
     }
     for k in k_list:
         metrics[f"Precision@{k}"] = precs[k] / max(n_batches, 1)
         metrics[f"Recall@{k}"]    = recs[k]  / max(n_batches, 1)
         metrics[f"HitRate@{k}"]   = hits[k]  / max(n_batches, 1)
     return metrics
+
 
 # -----------------------------
 # Main
@@ -149,7 +153,7 @@ def main():
             "max_len": max_len,
             "grad_clip": grad_clip,
             "l1_lambda": l1_lambda, # Added L1 lambda to wandb config
-            "backbone": "gpt2",
+            "backbone": "google/gemma-2b-it (block 12)",
             "dataset": os.getenv("HF_DATASET_ID", "mksethi/eli5-gemma-features"),
         }
     )
@@ -169,8 +173,12 @@ def main():
         torch.set_float32_matmul_precision("high")
 
     # 1) Tokenizer
-    tokenizer = GPT2TokenizerFast.from_pretrained("gpt2", padding_side="right")
-    tokenizer.pad_token = tokenizer.eos_token
+
+    model_name = "google/gemma-2b-it"
+    tokenizer = AutoTokenizer.from_pretrained(model_name, padding_side="right", use_fast=True)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
     pad_id = tokenizer.pad_token_id
 
     # 2) Load HF dataset (mksethi/eli5-gemma-features)
@@ -229,12 +237,15 @@ def main():
 
     # 6) Build model
     sae_dim = len(train_ds[0]["sae_acts"])
-    model = Query2SAE(head_hidden_dim=head_dim, sae_dim=sae_dim).to(device)
+    model = Query2SAE(head_hidden_dim=head_dim, sae_dim=sae_dim,
+                  layer_index=12, model_name=model_name).to(device)
+
 
     # 7) Optimizer / loss / AMP
     optimizer = optim.AdamW(model.head.parameters(), lr=lr)
-    mse_loss_fn = nn.MSELoss()
+    smoothl1 = nn.SmoothL1Loss(beta=0.5)
     scaler = amp.GradScaler(enabled=torch.cuda.is_available())
+
 
     wandb.watch(model.head, log="all", log_freq=50)
 
@@ -258,13 +269,10 @@ def main():
             optimizer.zero_grad(set_to_none=True)
             with amp.autocast(enabled=torch.cuda.is_available()):
                 preds = model(x_ids, attention_mask=x_mask)
-                
-                # --- The key fix: Add the L1 sparsity loss ---
-                loss_mse = mse_loss_fn(preds, y)
-                # L1 norm of the predictions to penalize non-zero features
-                loss_l1 = torch.norm(preds, p=1, dim=1).mean()
-                # Combined loss: MSE for accuracy + L1 for sparsity
-                loss = loss_mse + l1_lambda * loss_l1
+                cos_loss = 1.0 - F.cosine_similarity(preds + 1e-8, y + 1e-8, dim=1).mean()
+                sl1_loss = smoothl1(preds, y)
+                l1_loss  = preds.abs().mean()
+                loss = 0.3 * cos_loss + 0.7 * sl1_loss + l1_lambda * l1_loss
 
             scaler.scale(loss).backward()
             if grad_clip and grad_clip > 0:
@@ -281,10 +289,11 @@ def main():
             # per-batch logs
             wandb.log({
                 "global_step": global_step,
-                "TrainStep/TotalLoss": float(loss.item()),
-                "TrainStep/MSELoss": float(loss_mse.item()),
-                "TrainStep/L1Loss": float(loss_l1.item()),
                 "TrainStep/LR": optimizer.param_groups[0]["lr"],
+                "TrainStep/TotalLoss": float(loss.item()),
+                "TrainStep/CosineLoss": float(cos_loss.item()),
+                "TrainStep/SmoothL1Loss": float(sl1_loss.item()),
+                "TrainStep/L1Loss": float(l1_loss.item()),
             })
             global_step += 1
 
@@ -293,14 +302,16 @@ def main():
         wandb.log({
             "epoch": epoch,
             "Train/TotalLoss": train_loss,
-            "Train/MSELoss": loss_mse.item(),
-            "Train/L1Loss": loss_l1.item(),
+            "Train/CosineLoss": float(cos_loss.item()),
+            "Train/SmoothL1Loss": float(sl1_loss.item()),
+            "Train/L1Loss": float(l1_loss.item()),
             "LR": optimizer.param_groups[0]["lr"],
             "EpochSecs": time.time() - t0,
         })
+
         
         # validation each epoch (with the combined loss)
-        val_metrics = evaluate(model, val_loader, loss_fn=None, device=device) # The `evaluate` function now computes the composite loss internally
+        val_metrics = evaluate(model, val_loader, device=device, l1_lambda=l1_lambda) # The `evaluate` function now computes the composite loss internally
         wandb.log({"epoch": epoch, **{f"Val/{k}": v for k, v in val_metrics.items()}})
 
         # optional: generalization gap
@@ -321,7 +332,7 @@ def main():
             print(f"✓ New best (Val/TotalLoss={best_val:.4f}). Saved: {best_path}")
 
     # 9) Final eval and save "last"
-    final_metrics = evaluate(model, val_loader, loss_fn=None, device=device)
+    final_metrics = evaluate(model, val_loader, device=device, l1_lambda=l1_lambda)
     print("Final Validation:", final_metrics)
     wandb.log({f"Val_Final/{k}": v for k, v in final_metrics.items()})
 
