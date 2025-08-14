@@ -20,13 +20,13 @@ from safetensors.torch import save_file
 def get_hyperparams():
     batch_size  = int(os.getenv("BATCH_SIZE", 512))
     num_workers = int(os.getenv("NUM_WORKERS", 4))
-    epochs      = int(os.getenv("EPOCHS", 10))
-    lr          = float(os.getenv("LEARNING_RATE", 5e-5))
-    head_dim    = int(os.getenv("HEAD_HIDDEN_DIM", 128))
+    epochs      = int(os.getenv("EPOCHS", 50))
+    lr          = float(os.getenv("LEARNING_RATE", 5e-6))
+    head_dim    = int(os.getenv("HEAD_HIDDEN_DIM", 256))
     val_split   = float(os.getenv("VAL_SPLIT", 0.1))
     max_len     = int(os.getenv("MAX_LEN", 256))
     grad_clip   = float(os.getenv("GRAD_CLIP", 1.0))
-    l1_lambda   = float(os.getenv("L1_LAMBDA", 1e-5)) # New L1 sparsity regularization term
+    l1_lambda   = float(os.getenv("L1_LAMBDA", 0.00001)) # New L1 sparsity regularization term
     return batch_size, num_workers, epochs, lr, head_dim, val_split, max_len, grad_clip, l1_lambda
 
 def first_present(cols, options):
