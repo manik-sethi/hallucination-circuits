@@ -40,4 +40,3 @@ class Variant:
     
     def get_components(self):
         return self.model, self.sae, self.cfg, self.tokenizer
-

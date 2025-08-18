@@ -40,6 +40,7 @@ class NeuronpediaClient():
     def all_text_feat(self, query, ignore_bos, density_threshold, num_results):
 
             url = "https://www.neuronpedia.org/api/search-all"
+        
 
 
             payload = {

@@ -79,7 +79,7 @@ def main():
     if not os.path.isdir(data_dir):
         raise ValueError(f"Data directory not found: {data_dir}")
 
-    dataset_id = os.getenv("HF_DATASET_ID", "mksethi/eli5_sae_features")
+    dataset_id = os.getenv("HF_DATASET_ID", "mksethi/eli5_gemma_features")
     builder = load_dataset_builder(dataset_id)
     features = builder.info.features
 
