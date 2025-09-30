@@ -35,6 +35,8 @@ We use [domenicrosati/TruthfulQA](https://huggingface.co/datasets/domenicrosati/
 
 By doing this, we get a representation of our input text in a specific layer space using a specific sparse auto-encoder. Now we can build a dataset which contains these SAE representations, which will be useful for further analysis.
 
+Since this process has already been completed, the dataset is publically available on [huggingface](https://huggingface.co/datasets/mksethi/sae-acts-llama31-8b-it)
+
 ### Logging and tracking experiments
 
 We use [Weights & Biases](https://wandb.ai/site) to log and track our experiments.
