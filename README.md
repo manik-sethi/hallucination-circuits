@@ -73,31 +73,33 @@ You can get examples of how to do so in the `reproducibility-scripts/` directory
 Below, we give a description of the main files and directories in this repository.
 
 ```
- └─── src/                              # Source code.
-    └── template_package_name           # Our package.
-        ├── configs/                    # Hydra configuration files.
-        └── template_experiment.py      # A template experiment.
+hallucination-circuits/
+├── README.md
+├── LICENSE
+├── requirements.txt
+│
+├── src/
+│   ├── __init__.py
+│   ├── data/               # Dataset loaders & preprocessors
+│   ├── detectors/          # Model definitions & wrappers
+│   ├── interfaces/         # Connectors to external tools like Neuronpedia or Goodfire SDK
+│
+├── expectation_model/      # Expectation model implementation
+│   ├── __init__.py
+│   ├── trainer.py
+│   └── modules.py
+│
+├── notebooks/              # Jupyter notebooks for exploration
+│   ├── layerwise_pc1_analysis.ipynb      # Analyzing change in variance explained by PC1 by layer
+│   ├── pca1_magnitude_corr.ipynb         # Exploring correlation between first principal component and norm of data
+│   └── truthfulqa_sae_encoding.ipynb     # Transforming truthfulqa text into sae representations and creating a dataset
+│
+├── configs/                # YAML/JSON configs for experiments
+│   └── default.yaml
+
 ```
 
-## Contributing
 
-We use [`pre-commit`](https://pre-commit.com) hooks to ensure high-quality code.
-Make sure it's installed on the system where you're developing
-(it is in the dependencies of the project, but you may be editing the code from outside the development environment.
-If you have conda you can install it in your base environment, otherwise, you can install it with `brew`).
-Install the pre-commit hooks with
-
-```bash
-# When in the PROJECT_ROOT.
-pre-commit install --install-hooks
-```
-
-Then every time you commit, the pre-commit hooks will be triggered.
-You can also trigger them manually with:
-
-```bash
-pre-commit run --all-files
-```
 
 ## Licenses and acknowledgements
 
