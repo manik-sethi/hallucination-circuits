@@ -1,6 +1,5 @@
 # Using Monosemantic Features From Sparse Auto-Encoders to Detect Hallucinations
 
-[![PyPI version](https://img.shields.io/pypi/v/sae-lens)](https://pypi.org/project/sae-lens/)
 [![Build Status](https://github.com/manik-sethi/hallucination-circuits/actions/workflows/ci.yml/badge.svg)](https://github.com/manik-sethi/hallucination-circuits/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
@@ -63,16 +62,16 @@ hallucination-circuits/
 │
 ├── expectation_model/      # Expectation model implementation
 │   ├── __init__.py
-│   ├── trainer.py
-│   └── modules.py
+│   ├── hf/                 # Defining custom architecture classes for hugging face
+│   ├── models/             # Defining Frozen Language Model MLP class
+│   ├── trainer/            # Training loop implementation
+│   ├── utils/              # Supporting utils like model loading and metrics
+│   └── ...                 # Miscellaneous files, can be treated like scratch work
 │
 ├── notebooks/              # Jupyter notebooks for exploration
 │   ├── layerwise_pc1_analysis.ipynb      # Analyzing change in variance explained by PC1 by layer
 │   ├── pca1_magnitude_corr.ipynb         # Exploring correlation between first principal component and norm of data
 │   └── truthfulqa_sae_encoding.ipynb     # Transforming truthfulqa text into sae representations and creating a dataset
-│
-├── configs/                # YAML/JSON configs for experiments
-│   └── default.yaml
 
 ```
 
