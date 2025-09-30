@@ -17,14 +17,23 @@ In our research, we explore whether it is possible to detect hallucinations usin
 
 ### Code and development environment
 
-Once you have cloned this repo on your local machine, first install the dependencies by running the following code.
+First, clone this repo on your local machine
 ```
+git clone https://github.com/manik-sethi/hallucination-circuits
+```
+Next, run the following commands to install all dependencies in a virtual environment
+```
+python -m venv hallu-env
 pip install -r requirements.txt
 ```
 
 ### Data
+We use [domenicrosati/TruthfulQA](https://huggingface.co/datasets/domenicrosati/TruthfulQA) as our base dataset. We then run the following transformation on it
+- Run the text through a model which has [pretrained SAE's](https://jbloomaus.github.io/SAELens/latest/sae_table/)
+- Using the [Hooked Transformer](https://transformerlensorg.github.io/TransformerLens/index.html) version of the model, retrieve the residuals from a given layer
+- Encode the residuals using the SAE
 
-Refer to `data/README.md`.
+By doing this, we get a representation of our input text in a specific layer space using a specific sparse auto-encoder. Now we can build a dataset which contains these SAE representations, which will be useful for further analysis.
 
 ### Logging and tracking experiments
 
