@@ -23,6 +23,7 @@ git clone https://github.com/manik-sethi/hallucination-circuits
 Next, run the following commands to install all dependencies in a virtual environment
 ```
 python -m venv hallu-env
+source hallu-env/bin/activate
 pip install -r requirements.txt
 ```
 
