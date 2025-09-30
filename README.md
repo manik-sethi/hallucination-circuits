@@ -42,33 +42,8 @@ If you're logged in, your default entity will be used (a fixed entity is not set
 and you can set another entity with the `WANDB_ENTITY` environment variable.
 Otherwise, the runs will be anonymous (you don't need to be logged in).
 
-## Reproduction and experimentation
-
-### Reproducing our results
-
-> [!NOTE]
-
-We provide scripts to reproduce our work in the `reproducibility-scripts/` directory.
-It has a README at its root describing which scripts reproduce which experiments.
-
-We share our Weights and Biases runs in [this W&B project](https://wandb.ai/claire-labo/template-project-name).
-
-Moreover, we make our trained models available.
-You can follow the instructions in `outputs/README.md` to download and use them.
-
-### Experiment with different configurations
-
-The default configuration for each script is stored in the `configs/` directory.
-They are managed by [Hydra](https://hydra.cc/docs/intro/).
-You can experiment with different configurations by passing the relevant arguments.
-You can get examples of how to do so in the `reproducibility-scripts/` directory.
 
 ## Repository structure
-
-> [!NOTE]
-> **TEMPLATE TODO**:
-> Provide a quick overview of the main files in the repo for users to understand your code,
-> then delete this note.
 
 Below, we give a description of the main files and directories in this repository.
 
