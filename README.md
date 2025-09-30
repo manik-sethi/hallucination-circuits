@@ -1,6 +1,5 @@
 # Using Monosemantic Features From Sparse Auto-Encoders to Detect Hallucinations
 
-[![Build Status](https://github.com/manik-sethi/hallucination-circuits/actions/workflows/ci.yml/badge.svg)](https://github.com/manik-sethi/hallucination-circuits/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![Made with PyTorch](https://img.shields.io/badge/PyTorch-%23EE4C2C.svg?logo=pytorch&logoColor=white)](https://pytorch.org/)
