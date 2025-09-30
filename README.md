@@ -10,45 +10,8 @@
 
 ## Overview
 
-> [!NOTE]
-> **TEMPLATE TODO:**
-> Replace the description below with a description of your project, then delete this note.
-
-A template for starting Python machine-learning research
-projects with hardware acceleration featuring:
-
 Current methods of detecting hallucinations depend on logit distribution, semantic self-consistency, or layer-wise propagation.
 In our research, we explore whether it is possible to detect hallucinations using monosemantic features.
-
-- ✅ Reproducible environments on major platforms with hardware acceleration with a great development experience
-  covering multiple use cases:
-    - 💻 local machines, e.g., macOS (+ Apple Silicon/MPS) and Linux/Windows WSL (+ NVIDIA GPU).
-    - 🌐 Remote Linux servers with GPUs, e.g., VMs on cloud providers and IC and RCP HaaS at EPFL.
-    - ☁️ Managed clusters supporting OCI containers with GPUs, e.g., the EPFL IC and RCP Run:ai (Kubernetes) clusters
-      and the SCITAS Slurm clusters.
-- 📦 Python project packaging following the
-  [PyPA packaging guidelines](https://packaging.python.org/en/latest/tutorials/packaging-projects/) to avoid hacky
-  imports.
-- 📊 Experiment management, tracking, and sharing with [Hydra](https://hydra.cc/)
-  and [Weights & Biases](https://wandb.ai/site).
-- 💾 Checkpointing setup for research experiments compatible with Weights & Biases.
-- 🧹 Code quality with [pre-commit](https://pre-commit.com) hooks.
-
-🤝 The template makes collaboration and open-sourcing straightforward, avoiding setup issues and
-[maximizing impact](https://medium.com/paperswithcode/ml-code-completeness-checklist-e9127b168501#a826).
-
-🏆 The practices in this template earned its authors
-an [Outstanding Paper (Honorable Mention)](https://openreview.net/forum?id=E0qO5dI5aEn)
-at the [ML Reproducibility Challenge 2022](https://paperswithcode.com/rc2022).
-
-📌 Projects made with the template would look like
-[this toy project](https://github.com/skandermoalla/pytoych-benchmark)
-or [this paper](https://github.com/CLAIRE-Labo/no-representation-no-trust) whose curves have been exactly reproduced
-(exact same numbers) on multiple different platforms (EPFL Kubernetes cluster, VM on GCP, HPC cluster with Apptainer).
-
-📖 Follow this README to get started with the template.
-
-For a brief discussion of the template's design choices, features, and a Q&A check `template/README.md` file.
 
 ## Getting started
 
@@ -59,45 +22,7 @@ Once you have cloned this repo on your local machine, first install the dependen
 pip install -r requirements.txt
 ```
 
-> [!NOTE]
-> **TEMPLATE TODO**:
-> Update the installation methods and platforms you support, delete the rest, and delete this note.
-> I.e. keep either Docker or Conda, or both, or multiple of each if you support multiple platforms.
-> 1. Specify the platform for each option and its description
->    e.g., for Docker amd64, arm64, etc., and for conda osx-arm64, linux-amd64, etc.
-> 2. Specify the hardware acceleration options for each platform
->    e.g., for Docker NVIDIA GPUs, AMD GPUs etc.
-> 3. Specify the hardware on which you ran your experiments (e.g., type of CPU/GPU and size of memory) and
->    the minimum hardware required to run your code if applicable (e.g., NVIDIA GPU with 80GB of memory).
-
-We support the following methods and platforms for installing the project dependencies and running the code.
-
-- **Docker/OCI-container for AMD64 machines (+ NVIDIA GPUs)**:
-  This option works for machines with AMD64 CPUs and NVIDIA GPUs.
-  E.g. Linux machines (EPFL HaaS servers, VMs on cloud providers),
-  Windows machines with WSL, and clusters running OCI-compliant containers,
-  like the EPFL Run:ai (Kubernetes) clusters.
-
-  Follow the instructions in `installation/docker-amd64-cuda/README.md` to install the environment
-  then get back here for the rest of the instructions to run the experiments.
-
-  We ran our experiments on TODO: FILL IN THE HARDWARE YOU USED.
-  To run them, you should have at least TODO: FILL IN THE MINIMUM HARDWARE REQS IF APPLICABLE.
-
-- **Conda for osx-arm64**
-  This option works for macOS machines with Apple Silicon and can leverage MPS acceleration.
-
-  Follow the instructions in `installation/conda-osx-arm64-mps/README.md` to install the environment
-  then get back here for the rest of the instructions to run the experiments.
-
-  We ran our experiments on TODO: FILL IN THE HARDWARE YOU USED.
-  To run them, you should have at least TODO: FILL IN THE MINIMUM HARDWARE REQS IF APPLICABLE.
-
 ### Data
-
-> [!NOTE]
-> **TEMPLATE TODO**:
-> Fill `data/README.md` or delete this section, then delete this note.
 
 Refer to `data/README.md`.
 
@@ -113,10 +38,6 @@ Otherwise, the runs will be anonymous (you don't need to be logged in).
 ### Reproducing our results
 
 > [!NOTE]
-> **TEMPLATE TODO**:
-> Keep these scripts up to date and run your experiments using them.
-> Do provide the W&B runs and trained models or update this section.
-> Delete this note when shipping.
 
 We provide scripts to reproduce our work in the `reproducibility-scripts/` directory.
 It has a README at its root describing which scripts reproduce which experiments.
