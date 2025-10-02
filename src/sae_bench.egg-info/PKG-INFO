@@ -1,0 +1,6 @@
+Metadata-Version: 2.4
+Name: sae-bench
+Version: 0.1.0
+Summary: Research pipeline for SAE similarity experiments
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown

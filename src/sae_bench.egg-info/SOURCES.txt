@@ -1,0 +1,13 @@
+pyproject.toml
+src/sae_bench/__init__.py
+src/sae_bench/combine.py
+src/sae_bench/encode.py
+src/sae_bench/io.py
+src/sae_bench/pca.py
+src/sae_bench/plot.py
+src/sae_bench/regression.py
+src/sae_bench/sim.py
+src/sae_bench.egg-info/PKG-INFO
+src/sae_bench.egg-info/SOURCES.txt
+src/sae_bench.egg-info/dependency_links.txt
+src/sae_bench.egg-info/top_level.txt

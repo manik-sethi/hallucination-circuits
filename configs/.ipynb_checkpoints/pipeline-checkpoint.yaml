@@ -1,0 +1,5 @@
+llama-3.1-8b-Instruct:
+    sae_release: llama-3.1-8b-instruct-andyrdt
+    layers: [3, 7, 11, 15, 19, 23, 27]
+    hf_id: meta-llama/Llama-3.1-8B-Instruct
+
