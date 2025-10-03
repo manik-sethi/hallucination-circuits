@@ -7,12 +7,12 @@ import os
 from datasets import load_dataset, DatasetDict, Value, Sequence
 from functools import partial
 from uuid import uuid4 
+import shutil, glob
 
 BATCH_SIZE = 32
 WRITER_BATCH_SIZE = 512
 TEXT_COL = "Answer"
 MAX_LEN = 1024                # cap sequence length based on your VRAM
-REPO_ID = "mksethi/sae_reps_processed"
 CONFIG_PATH = "configs/pipeline.yaml"
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -51,7 +51,7 @@ def token2sae(input_ids, attention_mask, halluc_batch, *, hooked_model, sae_mode
     with torch.autocast(device_type=device, dtype=torch.bfloat16):
         _, cache = hooked_model.run_with_cache(
             toks,
-            names_filter=hook_name,
+            names_filter=lambda n: n == hook_name,
             stop_at_layer=hook_num + 1,
         )
         resid = cache[hook_name]        # [B, L, d_model]
@@ -108,10 +108,10 @@ def main():
             num_proc=max(1,(os.cpu_count() or 2) - 1),
             desc = f"Pretokenizing {model_name}"
         )
-        
+        layer_dict = {}
         for layer in layers:
             
-            NEW_COL = f"{model_name}_sae_l{layer}"
+            NEW_COL = f"sae_l{layer}"
             
             sae = SAE.from_pretrained(
                 release = sae_release,
@@ -127,41 +127,50 @@ def main():
                 new_col_name=NEW_COL
             )
 
-            new_splits = {}
+            layer_data = data.map(
+                sae_encoder_fn,
+                batched=True,
+                batch_size=BATCH_SIZE,
+                input_columns=["input_ids", "attention_mask", "Hallucination"],
+                writer_batch_size=WRITER_BATCH_SIZE,
+                load_from_cache_file=False,
+                desc=f"SAE encoding L{layer}",
+            )
+            
+            layer_dict[f"layer_{layer}"] = layer_data["train"]
 
-            for name, split in data.items():
-                feats = split.features.copy()
-
-                feats[NEW_COL] = Sequence(Value("float32"))
-
-                input_cols = ["input_ids", "attention_mask", "Hallucination"]
-    
-                new_splits[name] = split.map(
-                    sae_encoder_fn,
-                    batched=True,
-                    batch_size=BATCH_SIZE,
-                    input_columns=input_cols,
-                    features=feats,
-                    writer_batch_size=WRITER_BATCH_SIZE,
-                    load_from_cache_file=False,
-                    desc=f"SAE encoding L{layer}",
-                    new_fingerprint=str(uuid4()),
-                )
-                
-            data = DatasetDict(new_splits)
-    
             del sae
-
             if device == 'cuda':
                 torch.cuda.empty_cache()
             
-        data.push_to_hub(REPO_ID,
-                         split=model_name,
-                        commit_message=f"Added SAE activations for {model_name}")
+            sae_pattern = f"/workspace/.cache/huggingface/hub/models--*--*/snapshots/*/resid_post_layer_{layer}_*"
+            for path in glob.glob(sae_pattern):
+                shutil.rmtree(path, ignore_errors=True)
+            print(f"🧹 Cleared SAE cache for layer {layer}")
             
+        REPO_ID = f"mksethi/{model_name}_sae_reps"
+
+        DatasetDict(layer_dict).push_to_hub(
+            REPO_ID,
+            commit_message=f"Added SAE activations for {model_name} all layers"
+        )
+        
+        try:
+            # Clean all HF datasets cache to reclaim space
+            shutil.rmtree("/workspace/.cache/huggingface/datasets", ignore_errors=True)
+        except Exception:
+            pass
+
+
+                            
+
         del model
         if device == 'cuda':
             torch.cuda.empty_cache()
+
+        for path in glob.glob(f"/workspace/.cache/huggingface/hub/models--*{model_id.replace('/', '--')}*"):
+            shutil.rmtree(path, ignore_errors=True)
+
 
 if __name__ == "__main__":
     main()
