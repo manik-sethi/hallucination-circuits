@@ -36,11 +36,10 @@ class Query2SAE(nn.Module):
         )
 
     def forward(self, input_ids, attention_mask=None):
-        # Pass through GPT2
+        # pass through GPT2
         out = self.backbone(input_ids=input_ids, attention_mask=attention_mask)
-        # Use the last token’s hidden state (you can also do mean pooling if you prefer)
-        last_hidden = out.last_hidden_state[:, -1, :]  # (batch_size, 768)
-        # Predict SAE vector
+        last_hidden = out.last_hidden_state[:, -1, :]
+        # predict SAE vector
         return self.head(last_hidden)
 
 def evaluate(model, loader, loss_fn, device):
@@ -86,9 +85,9 @@ def main():
 
     # 1) Tokenizer
     tokenizer = GPT2TokenizerFast.from_pretrained("gpt2", padding_side="right")
-    tokenizer.pad_token = tokenizer.eos_token  # ensure there's a pad token
+    tokenizer.pad_token = tokenizer.eos_toke
 
-    # 2) Load raw dataset (assumes each row has "query" and "sae_features")
+    # 2) Load raw dataset
     data_dir = os.getenv("DATA_DIR") or "/workspace/eli5_sae_features_parquet"
     dataset_id = os.getenv("HF_DATASET_ID", "mksethi/eli5_sae_features")
     ds = load_dataset("parquet", data_files=f"{data_dir}/*.parquet", split="train")
